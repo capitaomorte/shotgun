@@ -66,6 +66,7 @@ module Shotgun
       def close
         fd.close
       ensure
+        Process.kill("TERM",pid)
         Process.wait(pid)
       end
     end
@@ -86,7 +87,6 @@ module Shotgun
       status, headers, body = assemble_app.call(@env)
       Marshal.dump([:ok, status, headers.to_hash], @writer)
       spec_body(body).each { |chunk| @writer.write(chunk) }
-      body.close if body.respond_to?(:close)
     rescue Object => boom
       Marshal.dump([
         :error,
@@ -94,8 +94,11 @@ module Shotgun
         boom.backtrace
       ], @writer)
     ensure
-      @writer.close
-      exit! boom ? 1 : 0
+      Signal.trap("TERM") do
+        body.close if (body ||= nil) && body.respond_to(:close)
+        @writer.close
+        exit! boom ? 1 : 0
+      end
     end
 
     def assemble_app
